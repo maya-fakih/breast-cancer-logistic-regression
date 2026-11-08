@@ -1,62 +1,10 @@
 from pathlib import Path
+
+import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+from scipy.special import expit
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-
-
-def show_info(df):
-    print("----------DataFrame Info----------\n")
-    df.info()
-
-    print("\n----------Data shape----------\n")
-    print(df.shape)
-
-    print("\n----------Data description----------\n")
-    print(df.describe().to_string())
-
-
-def show_correlations(df):
-    corr = df.drop(columns="Label").corr()
-
-    print("\n----------Full correlation matrix----------\n")
-    print(corr.to_string())
-
-    print("\n----------Pairs with correlation > 0.9----------\n")
-    for i in range(len(corr.columns)):
-        for j in range(i + 1, len(corr.columns)):
-            value = corr.iloc[i, j]
-            if value > 0.9:
-                print(
-                    f"{corr.columns[i]} — {corr.columns[j]}: "
-                    f"{value:.4f}"
-                )
-
-    return corr
-
-
-def plot_correlations(corr, title, output_path):
-    fig, ax = plt.subplots(figsize=(15, 12))
-
-    sns.heatmap(
-        corr,
-        ax=ax,
-        cmap="coolwarm",
-        vmin=-1,
-        vmax=1,
-        center=0,
-        square=True,
-        cbar_kws={"label": "Pearson correlation"},
-    )
-
-    ax.set_title(title)
-    ax.tick_params(axis="both", labelsize=8)
-    plt.xticks(rotation=90)
-    plt.yticks(rotation=0)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
-    plt.close(fig)
 
 
 def drop_correlated_features(df, threshold=0.9):
@@ -64,42 +12,17 @@ def drop_correlated_features(df, threshold=0.9):
     kept = []
     dropped = []
 
-    # Keep a feature if it is not highly correlated with any kept feature.
     for feature in corr.columns:
         if any(corr.loc[feature, other] > threshold for other in kept):
             dropped.append(feature)
         else:
             kept.append(feature)
 
-    print("\nDropped features:", dropped)
+    print("Dropped features:", dropped)
     print("Remaining feature count:", len(kept))
 
     return df[kept + ["Label"]].copy()
 
-
-def plot_feature_labels(df, output_dir):
-    # Exercise 5: one joint histogram per (feature, Label).
-    for feature in df.drop(columns="Label").columns:
-        grid = sns.jointplot(
-            data=df,
-            x=feature,
-            y="Label",
-            kind="hist",
-            height=6,
-            joint_kws={"bins": (20, 2)},
-        )
-
-        grid.ax_joint.set_yticks([0, 1])
-        grid.ax_joint.set_yticklabels(["Benign (0)", "Malignant (1)"])
-        grid.fig.suptitle(f"{feature} against Label")
-        grid.fig.subplots_adjust(top=0.92)
-
-        grid.fig.savefig(
-            output_dir / f"{feature.replace(' ', '_')}_label.png",
-            dpi=200,
-            bbox_inches="tight",
-        )
-        plt.close(grid.fig)
 
 def prepare_data(df):
     X = df.drop(columns="Label")
@@ -107,58 +30,141 @@ def prepare_data(df):
 
     # Assignment: 500 training patients and 69 testing patients.
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
+        X,
+        y,
         test_size=69,
         random_state=42,
     )
 
-    # Learn scaling from training data, then apply it to both sets.
+    # Fit on training data only.
     scaler = MinMaxScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
     return X_train, X_test, y_train.to_numpy(), y_test.to_numpy()
 
+
+def loss(X, y, w, b, lam):
+    z = X @ w + b
+
+    # Stable evaluation of the assignment's summed objective.
+    return (
+        np.sum(np.logaddexp(0, z) - y * z)
+        + (lam / 2) * np.dot(w, w)
+    )
+
+
+def cross_entropy(X, y, w, b):
+    z = X @ w + b
+
+    # Mean loss allows comparison between differently sized datasets.
+    return np.mean(np.logaddexp(0, z) - y * z)
+
+
+def accuracy(X, y, w, b):
+    probabilities = expit(X @ w + b)
+    predictions = (probabilities > 0.5).astype(int)
+    return np.mean(predictions == y)
+
+
+def gradient_descent(
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+    step_size=0.001,
+    lam=0.1,
+    max_iter=20000,
+    tolerance=1e-5,
+):
+    w = np.zeros(X_train.shape[1])
+    b = 0.0
+    history = []
+
+    def record(iteration):
+        history.append({
+            "iteration": iteration,
+            "train_objective": loss(X_train, y_train, w, b, lam),
+            "train_loss": cross_entropy(X_train, y_train, w, b),
+            "test_loss": cross_entropy(X_test, y_test, w, b),
+            "train_accuracy": accuracy(X_train, y_train, w, b),
+            "test_accuracy": accuracy(X_test, y_test, w, b),
+        })
+
+    record(0)
+    updates = 0
+
+    for _ in range(max_iter):
+        probabilities = expit(X_train @ w + b)
+        error = probabilities - y_train
+
+        # Gradient of summed cross-entropy + L2 regularization.
+        grad_w = X_train.T @ error + lam * w
+        grad_b = np.sum(error)
+
+        grad_norm = np.sqrt(np.dot(grad_w, grad_w) + grad_b**2)
+
+        if grad_norm < tolerance:
+            break
+
+        w -= step_size * grad_w
+        b -= step_size * grad_b
+        updates += 1
+
+        if updates % 100 == 0:
+            record(updates)
+
+    if history[-1]["iteration"] != updates:
+        record(updates)
+
+    # Check the gradient at the final parameters.
+    error = expit(X_train @ w + b) - y_train
+    grad_w = X_train.T @ error + lam * w
+    grad_b = np.sum(error)
+    grad_norm = np.sqrt(np.dot(grad_w, grad_w) + grad_b**2)
+
+    return w, b, pd.DataFrame(history), updates, grad_norm
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
-    data_path = root / "data" / "WDBC_data.xlsx"
-
     results_dir = root / "results"
-    jointplots_dir = results_dir / "jointplots"
-    jointplots_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_excel(data_path)
-    show_info(df)
-
-    # Step 3: full matrix before removing features.
-    corr_before = show_correlations(df)
-    plot_correlations(
-        corr_before,
-        "Feature Correlations Before Removal",
-        results_dir / "correlations_before.png",
-    )
-    corr_before.to_csv(results_dir / "correlations_before.csv")
-
-    # Step 4: remove redundant features and repeat the matrix.
+    df = pd.read_excel(root / "data" / "WDBC_data.xlsx")
     df = drop_correlated_features(df)
-    corr_after = show_correlations(df)
-    plot_correlations(
-        corr_after,
-        "Feature Correlations After Removal",
-        results_dir / "correlations_after.png",
-    )
-    corr_after.to_csv(results_dir / "correlations_after.csv")
 
-    # Step 5: joint histograms of retained features against Label.
-    plot_feature_labels(df, jointplots_dir)
-
-    print(f"\nFigures and correlation tables saved in: {results_dir}")
-
-    # Step 6: prepare data for training and testing.
     X_train, X_test, y_train, y_test = prepare_data(df)
 
     print("Training shape:", X_train.shape)
     print("Testing shape:", X_test.shape)
+
+    step_size = 0.001
+    lam = 0.1
+
+    w, b, history, updates, grad_norm = gradient_descent(
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        step_size=step_size,
+        lam=lam,
+    )
+
+    print("\n----------Gradient descent----------")
+    print(f"Step size: {step_size}")
+    print(f"Lambda: {lam}")
+    print(f"Updates: {updates}")
+    print(f"Final gradient norm: {grad_norm:.6e}")
+    print(f"Converged to tolerance: {grad_norm < 1e-5}")
+    print(f"Training objective: {loss(X_train, y_train, w, b, lam):.6f}")
+    print(f"Training accuracy: {accuracy(X_train, y_train, w, b):.2%}")
+    print(f"Testing accuracy: {accuracy(X_test, y_test, w, b):.2%}")
+
+    history.to_csv(results_dir / "gd_history.csv", index=False)
+    np.savez(results_dir / "gd_parameters.npz", w=w, b=b)
+
+    print(f"\nResults saved in: {results_dir}")
 
 
 if __name__ == "__main__":
