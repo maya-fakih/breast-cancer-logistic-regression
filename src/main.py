@@ -2,6 +2,8 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
 
 
 def show_info(df):
@@ -99,6 +101,23 @@ def plot_feature_labels(df, output_dir):
         )
         plt.close(grid.fig)
 
+def prepare_data(df):
+    X = df.drop(columns="Label")
+    y = df["Label"]
+
+    # Assignment: 500 training patients and 69 testing patients.
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=69,
+        random_state=42,
+    )
+
+    # Learn scaling from training data, then apply it to both sets.
+    scaler = MinMaxScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    return X_train, X_test, y_train.to_numpy(), y_test.to_numpy()
 
 def main():
     root = Path(__file__).resolve().parent.parent
@@ -134,6 +153,12 @@ def main():
     plot_feature_labels(df, jointplots_dir)
 
     print(f"\nFigures and correlation tables saved in: {results_dir}")
+
+    # Step 6: prepare data for training and testing.
+    X_train, X_test, y_train, y_test = prepare_data(df)
+
+    print("Training shape:", X_train.shape)
+    print("Testing shape:", X_test.shape)
 
 
 if __name__ == "__main__":
