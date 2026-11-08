@@ -1,0 +1,22 @@
+feature_1,feature_2,correlation
+radius_mean,perimeter_mean,0.9978552814938111
+radius_mean,area_mean,0.987357170056613
+radius_mean,radius_worst,0.9695389726112055
+radius_mean,perimeter_worst,0.9651365139559875
+radius_mean,area_worst,0.9410824595860471
+texture_mean,texture_worst,0.9120445888404219
+perimeter_mean,area_mean,0.9865068039913886
+perimeter_mean,radius_worst,0.9694763634663143
+perimeter_mean,perimeter_worst,0.9703868870426384
+perimeter_mean,area_worst,0.9415498080023064
+area_mean,radius_worst,0.9627460860470836
+area_mean,perimeter_worst,0.9591195743552658
+area_mean,area_worst,0.9592133256499015
+concavity_mean,concave points_mean,0.9213910263788588
+concave points_mean,concave points_worst,0.9101553142985935
+radius_se,perimeter_se,0.9727936770160747
+radius_se,area_se,0.9518301121109906
+perimeter_se,area_se,0.9376554069544148
+radius_worst,perimeter_worst,0.9937079161029517
+radius_worst,area_worst,0.9840145644590743
+perimeter_worst,area_worst,0.9775780914063892
